@@ -73,12 +73,14 @@ static inline void knx_tx_program_init(PIO pio, uint sm, uint offset, uint pin_t
     pio_sm_set_enabled(pio, sm, true);
 }
 static inline void knx_tx_program_putc(PIO pio, uint sm, char c) {
-    uint32_t byte = (uint32_t)c | 0x200;    //Add Stop Bit
-    pio_sm_put(pio, sm, (uint32_t)c);
-}
-static inline void knx_tx_program_puts(PIO pio, uint sm, const char *s) {
-    while (*s)
-        knx_tx_program_putc(pio, sm, *s++);
+    uint32_t parity = c ^ (c >> 1);
+    parity = parity ^ (parity >> 2);
+    parity = parity ^ (parity >> 4);
+    uint32_t byte = (uint32_t)c | 0x200 | ((parity << 8) & 0x100);    //Add Stop Bit and even parity
+    //Serial.print("TX Parity: ");
+    //Serial.print(parity & 0x1);
+    //Serial.println("");
+    pio_sm_put(pio, sm, byte);
 }
 
 static inline bool knx_tx_get_irq(PIO pio, uint irq_nr) {
@@ -94,7 +96,6 @@ static inline void knx_tx_clr_irq(PIO pio, uint irq_nr) {
 // ------ //
 // knx_rx //
 // ------ //
-
 #define knx_rx_wrap_target 0
 #define knx_rx_wrap 9
 
@@ -102,8 +103,8 @@ static const uint16_t knx_rx_program_instructions[] = {
             //     .wrap_target
     0x20a0, //  0: wait   1 pin, 0                   
     0xe828, //  1: set    x, 8                   [8] 
-    0x4701, //  2: in     pins, 1                [7] 
-    0x0042, //  3: jmp    x--, 2                     
+    0x4001, //  2: in     pins, 1                    
+    0x0742, //  3: jmp    x--, 2                 [7] 
     0x00c8, //  4: jmp    pin, 8                     
     0xa0ce, //  5: mov    isr, !isr                  
     0x8020, //  6: push   block                      
@@ -153,12 +154,37 @@ static inline char knx_rx_program_getc(PIO pio, uint sm) {
     return (uint32_t)*rxfifo_shift;
 }
 
-static inline uint32_t knx_rx_program_get_32(PIO pio, uint sm) {
+static inline char knx_rx_program_get_char(PIO pio, uint sm) {
     // 8-bit read from the uppermost byte of the FIFO, as data is left-justified
-    io_rw_32 *rxfifo_shift = (io_rw_32*)&pio->rxf[sm];
-    while (pio_sm_is_rx_fifo_empty(pio, sm))
+    
+    //uint32_t rxfifo_shift = (uint32_t)pio->rxf[sm];
+    while (pio_sm_is_rx_fifo_empty(pio, sm)){
         tight_loop_contents();
-    return (uint32_t)*rxfifo_shift;
+        if( knx_tx_get_irq(pio0, 1)){
+            knx_tx_clr_irq(pio0, 1);
+            Serial.println("IRQ RX Rised");
+            break;
+        } 
+    }
+    uint32_t rxfifo_shift = pio_sm_get(pio, sm);
+    
+    char rx = ((rxfifo_shift) >> 23) & 0xFF;
+    uint32_t parity_bit = ((rxfifo_shift) >> 31 ) & 0x01;
+    uint32_t parity = rx ^ (rx >> 1);
+    parity = parity ^ (parity >> 2);
+    parity = (parity ^ (parity >> 4)) & 0x1;
+
+    //Serial.print("RX: ");
+    //Serial.print(rx);
+    //Serial.print(" P: ");
+    //Serial.print(parity_bit);
+    //Serial.println("");
+    if(parity_bit == parity)
+        return rx;
+    else
+        return 0x00;
 }
+
+
 
 #endif

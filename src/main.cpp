@@ -6,7 +6,6 @@
 #include "knx_uart_pio.h"
 
 #define KNX_RX_PIN  0
-#define KNX_RX_PIN_2 2
 #define KNX_TX_PIN  1
 
 #define KNX_BAUD 9600
@@ -51,12 +50,16 @@ char* transmit_knx(char * str){
         if(ok != 1){
           break;
         }
-        uint32_t rx = knx_rx_program_get_32(pio0, 1);
-        rx_buffer[rx_prt++] = (rx >> 23) & 0xFF;
-        if( knx_tx_get_irq(pio0, 1)){
-            knx_tx_clr_irq(pio0, 1);
-            Serial.println("IRQ RX Rised");
-          } 
+
+        char dummy = knx_rx_program_get_char(pio0, 1);
+        if(dummy != 0x00){
+          rx_buffer[rx_prt++] = dummy;
+        }
+        else{
+          Serial.println("Parity not match");
+        }
+        
+        
     }
     return  &rx_buffer[0];
 }

@@ -7,7 +7,8 @@
 ; OUT pin 0 and side-set pin 0 are both mapped to UART TX pin.
 ; Parity is calculated outside 
     pull                side 0          ; will block until new data received Load data from osr (Idle State)
-    set    x 0                             ; set start bit to x
+    set    x 0          side 0                   ; set start bit to x
+    jmp csma            side 1
 
 bitloop:   ;logic level (for 1 cycles -> two others must be outside)
     mov    pins ,!x                     ; Inverse bit, write to pin and wait 1 cycles
@@ -82,8 +83,8 @@ start:
     wait 1 pin 0        ; Stall until start bit is asserted
     set x, 8        [8] ; Preload bit counter, then delay until halfway through (104us Period / 35 us Level 1 (Logic 0) -> 17 us half)
 bitloop:                ; the first data bit (12 cycles incl wait, set).
-    in pins, 1      [7] ;load in shift reg with y
-    jmp x-- bitloop     ; Loop 9 times, each loop iteration is 8 cycles
+    in pins, 1          ;load in shift reg with y
+    jmp x-- bitloop [7] ; Loop 9 times, each loop iteration is 8 cycles
     jmp pin bad_stop    ; Check stop bit (should be low)
 
 good_stop:   
